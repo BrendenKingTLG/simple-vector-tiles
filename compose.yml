@@ -1,0 +1,147 @@
+version: "3.8"
+
+volumes:
+  pgdata:
+
+networks:
+  postgres:
+    driver: bridge
+
+services:
+
+  postgres:
+    image: "${POSTGIS_IMAGE:-openmaptiles/postgis}:${TOOLS_VERSION}"
+    command: postgres -c jit=off
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - postgres
+    ports:
+      - "${PGPORT:-5432}:${PGPORT:-5432}"
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-openmaptiles}
+      POSTGRES_USER: ${PGUSER:-openmaptiles}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-openmaptiles}
+      PGPORT: ${PGPORT:-5432}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "openmaptiles"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  import-data:
+    image: "openmaptiles/import-data:${TOOLS_VERSION}"
+    env_file: .env
+    networks:
+      - postgres
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  import-osm:
+    image: openmaptiles/openmaptiles-tools:${TOOLS_VERSION}
+    entrypoint: ["import-osm"]
+    depends_on:
+      import-data:
+        condition: service_completed_successfully
+    volumes:
+      - ./data:/import
+      - ./mapping.yaml:/mapping/mapping.yaml
+    networks:
+      - postgres
+    env_file: .env
+
+  import-wikidata:
+    image: openmaptiles/openmaptiles-tools:${TOOLS_VERSION}
+    command: ["import-wikidata", "openmaptiles.yaml"]
+    working_dir: /tileset
+    depends_on:
+      import-osm:
+        condition: service_completed_successfully
+    volumes:
+      - ./openmaptiles.yaml:/tileset/openmaptiles.yaml
+      - ./layers:/tileset/layers
+      # - ./wikidata-cache.json:/cache/wikidata-cache.json  # Optional cache for faster repeated imports
+    networks:
+      - postgres
+    env_file: .env
+
+  generate-sql:
+    image: openmaptiles/openmaptiles-tools:${TOOLS_VERSION}
+    command: >
+      bash -c "mkdir -p build/sql/parallel &&
+      generate-sql openmaptiles.yaml --dir ./build/sql &&
+      generate-sqltomvt openmaptiles.yaml --key --gzip --postgis-ver 3.3.4 --function --fname=getmvt >> ./build/sql/run_last.sql"
+    working_dir: /tileset
+    volumes:
+      - .:/tileset
+    networks:
+      - postgres
+    depends_on:
+      import-wikidata:
+        condition: service_completed_successfully
+    restart: "no"
+
+  import-sql:
+    image: openmaptiles/openmaptiles-tools:${TOOLS_VERSION}
+    working_dir: /tileset
+    command: bash /tileset/scripts/import-sql.sh
+    volumes:
+      - ./build/sql:/tileset/sql
+      - ./sql:/openmaptiles/sql
+      - ./scripts/import-sql.sh:/tileset/scripts/import-sql.sh
+    networks:
+      - postgres
+    depends_on:
+      generate-sql:
+        condition: service_completed_successfully
+    restart: "no"
+    env_file: .env
+    environment:
+      SQL_TOOLS_DIR: /openmaptiles/sql
+      SQL_DIR: /tileset/sql
+
+  # import-sql:
+  #   image: openmaptiles/openmaptiles-tools:${TOOLS_VERSION}
+  #   working_dir: /tileset
+  #   command: import-sql
+  #   volumes:
+  #     - .build/sql:/tileset/sql
+  #   networks:
+  #     - postgres
+  #   depends_on:
+  #     generate-sql:
+  #       condition: service_completed_successfully
+  #   restart: "no"
+  #   env_file: .env
+
+  api:
+    build:
+      context: apps/api
+      dockerfile: Dockerfile
+    depends_on:
+      import-sql:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./openmaptiles.yaml:/app/openmaptiles.yaml
+      - ./layers:/app/layers
+    networks:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://openmaptiles:openmaptiles@postgres:5432/openmaptiles
+
+  ui:
+    build:
+      context: apps/ui
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "80:80"
+    networks:
+      - postgres
