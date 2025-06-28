@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Tuple
 
 # noinspection PyUnresolvedReferences
 from ascii_graph import Pyasciigraph
+
 # noinspection PyUnresolvedReferences
 from dataclasses_json import dataclass_json, config
 
@@ -18,20 +19,20 @@ DEFAULT_TERMINAL_WIDTH = 85
 
 
 class Colors:
-    GREEN = ''
-    RED = ''
-    RESET = ''
+    GREEN = ""
+    RED = ""
+    RESET = ""
 
     def __init__(self) -> None:
         self.enable(stdout.isatty())
 
     def enable(self, enable=True):
         if enable:
-            self.GREEN = '\x1b[32;107m'
-            self.RED = '\x1b[31;107m'
-            self.RESET = '\x1b[0m'
+            self.GREEN = "\x1b[32;107m"
+            self.RED = "\x1b[31;107m"
+            self.RESET = "\x1b[0m"
         else:
-            self.GREEN, self.RED, self.RESET = '', '', ''
+            self.GREEN, self.RED, self.RESET = "", "", ""
 
 
 COLOR = Colors()
@@ -43,14 +44,14 @@ def change(old, new, is_speed=False, color=False):
         # For speed, less than 0.1% is considered the same
         # For size every byte should count
         clr = None
-        value = ' ±0.0%'
+        value = " ±0.0%"
     elif abs(growth) < 0.1:
         # For < 10% show the number but don't highlight
         clr = None
-        value = f' {growth:+.1%}'
+        value = f" {growth:+.1%}"
     else:
         clr = COLOR.GREEN if (growth > 0) == is_speed else COLOR.RED
-        value = f' {clr}{growth:+.1%}{COLOR.RESET}'
+        value = f" {clr}{growth:+.1%}{COLOR.RESET}"
     if color:
         return value, clr
     else:
@@ -65,7 +66,8 @@ class PerfSummary:
         metadata=config(
             encoder=timedelta.total_seconds,
             decoder=lambda v: timedelta(seconds=v),
-        ))
+        ),
+    )
     tiles: int = 0
     bytes: int = 0
     tile_avg_size: float = 0
@@ -76,7 +78,7 @@ class PerfSummary:
         if self.duration:
             self.gen_speed = float(self.tiles) / self.duration.total_seconds()
 
-    def perf_format(self, old: 'PerfSummary'):
+    def perf_format(self, old: "PerfSummary"):
         if self.tiles > 0:
             return (
                 f'Generated {self.tiles:,} tiles in {round_td(self.duration)}, '
@@ -87,16 +89,16 @@ class PerfSummary:
                 f'{change(old.tile_avg_size, self.tile_avg_size) if old else ""}'
             )
         else:
-            return f'No tiles were generated in {round_td(self.duration)}'
+            return f"No tiles were generated in {round_td(self.duration)}"
 
-    def graph_msg(self, is_speed, group, old: 'PerfSummary'):
-        info = f'{self.tiles} tiles in {round_td(self.duration)}'
+    def graph_msg(self, is_speed, group, old: "PerfSummary"):
+        info = f"{self.tiles} tiles in {round_td(self.duration)}"
         value = self.gen_speed if is_speed else self.tile_avg_size
         old = (old.gen_speed if is_speed else old.tile_avg_size) if old else None
         if old:
             delta, color = change(old, value, color=True, is_speed=is_speed)
         else:
-            delta = ''
+            delta = ""
             color = None
         msg = f'{"tiles/s" if is_speed else "per tile"}{delta} {group}, {info}'
         if color:
@@ -119,16 +121,18 @@ class PerfBucket:
     def __post_init__(self):
         self.tile_avg_size = float(self.bytes) / self.tiles if self.tiles else 0
 
-    def graph_msg(self, old: 'PerfBucket'):
+    def graph_msg(self, old: "PerfBucket"):
         if old:
             delta, color = change(old.tile_avg_size, self.tile_avg_size, color=True)
         else:
-            delta = ''
+            delta = ""
             color = None
-        msg = f'avg size' \
-              f'{delta}, ' \
-              f'{self.smallest_size:,}B ({self.smallest_id}) — ' \
-              f'{self.largest_size:,}B ({self.largest_id})'
+        msg = (
+            f"avg size"
+            f"{delta}, "
+            f"{self.smallest_size:,}B ({self.smallest_id}) — "
+            f"{self.largest_size:,}B ({self.largest_id})"
+        )
         if color:
             return msg, self.tile_avg_size, color
         else:
@@ -189,55 +193,62 @@ class TestCase:
             if len(self.layers) == 1:
                 self.layers_id = self.layers[0]
             else:
-                self.layers_id = ','.join(self.layers)
+                self.layers_id = ",".join(self.layers)
         else:
-            self.layers_id = '_all_'
+            self.layers_id = "_all_"
 
-    def make_test(self, zoom, layers, query) -> 'TestCase':
+    def make_test(self, zoom, layers, query) -> "TestCase":
         diff = zoom - self.zoom
         mult = pow(2, diff) if diff > 0 else 1 / pow(2, -diff)
         tc = TestCase(
-            id=self.id, desc=self.desc,
+            id=self.id,
+            desc=self.desc,
             start=(int(self.start[0] * mult), int(self.start[1] * mult)),
             before=(int(ceil(self.before[0] * mult)), int(ceil(self.before[1] * mult))),
-            zoom=zoom, layers=layers, query=query)
-        tc.result = PerfTestSummary(id=tc.id, tiles=tc.size(), layers=tc.layers_id,
-                                    zoom=zoom)
+            zoom=zoom,
+            layers=layers,
+            query=query,
+        )
+        tc.result = PerfTestSummary(id=tc.id, tiles=tc.size(), layers=tc.layers_id, zoom=zoom)
         return tc
 
     def size(self) -> int:
         return (self.before[0] - self.start[0]) * (self.before[1] - self.start[1])
 
     def fmt_table(self) -> str:
-        pos = ''
+        pos = ""
         if self.size() > 0:
-            pos = f' [{self.start[0]}/{self.start[1]}]' \
-                  f'x[{self.before[0] - 1}/{self.before[1] - 1}]'
-        return f'* {self.id:30} {self.desc} ({self.size():,} ' \
-               f'tiles at z{self.zoom}{pos})'
+            pos = (
+                f" [{self.start[0]}/{self.start[1]}]"
+                f"x[{self.before[0] - 1}/{self.before[1] - 1}]"
+            )
+        return f"* {self.id:30} {self.desc} ({self.size():,} " f"tiles at z{self.zoom}{pos})"
 
     def format(self) -> str:
-        return f'{self.fmt_layers()} test "{self.id}" at zoom {self.zoom} ' \
-               f'({self.size():,} tiles) - {self.desc}'
+        return (
+            f'{self.fmt_layers()} test "{self.id}" at zoom {self.zoom} '
+            f"({self.size():,} tiles) - {self.desc}"
+        )
 
     def fmt_layers(self):
         if self.layers:
             if len(self.layers) == 1:
-                return f'layer {self.layers[0]}'
+                return f"layer {self.layers[0]}"
             else:
-                vals = ','.join(self.layers)
-                return f'layers [{vals}]'
+                vals = ",".join(self.layers)
+                return f"layers [{vals}]"
         else:
-            return 'all layers'
+            return "all layers"
 
 
 def print_graph(header, data, is_bytes=False):
     graph = Pyasciigraph(
-        float_format='{:,.1f}',
+        float_format="{:,.1f}",
         min_graph_length=20,
         separator_length=1,
         line_length=shutil.get_terminal_size((DEFAULT_TERMINAL_WIDTH, 20)).columns,
-        human_readable='cs' if is_bytes else None)
+        human_readable="cs" if is_bytes else None,
+    )
     for line in graph.graph(header, data):
         print(line)
     print()

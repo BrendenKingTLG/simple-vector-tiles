@@ -7,19 +7,19 @@ from openmaptiles.pgutils import quote_literal
 from openmaptiles.tileset import Tileset, Layer
 
 
-def collect_sql(tileset_filename, parallel=False, nodata=False
-                ) -> Union[str, Tuple[str, Dict[str, str], str]]:
+def collect_sql(
+    tileset_filename, parallel=False, nodata=False
+) -> Union[str, Tuple[str, Dict[str, str], str]]:
     """If parallel is True, returns a sql value that must be executed first, last,
-        and a dict of names -> sql code that can be ran in parallel.
-        If parallel is False, returns a single sql string.
-        nodata=True replaces all '/* DELAY_MATERIALIZED_VIEW_CREATION */'
-        with the "WITH NO DATA" SQL."""
+    and a dict of names -> sql code that can be ran in parallel.
+    If parallel is False, returns a single sql string.
+    nodata=True replaces all '/* DELAY_MATERIALIZED_VIEW_CREATION */'
+    with the "WITH NO DATA" SQL."""
     tileset = Tileset(tileset_filename)
 
-    run_first = '-- This SQL code should be executed first\n\n' + \
-                get_slice_language_tags(tileset)
+    run_first = "-- This SQL code should be executed first\n\n" + get_slice_language_tags(tileset)
     # at this point we don't have any SQL to run at the end
-    run_last = '-- This SQL code should be executed last\n'
+    run_last = "-- This SQL code should be executed last\n"
 
     # resolved is a map of layer ID to some ID in results.
     # the ID in results could be the same as layer ID, or it could be a tuple of IDs
@@ -51,11 +51,11 @@ def collect_sql(tileset_filename, parallel=False, nodata=False
                         res_id2 = resolved[lid2]
                         if res_id1 == res_id2:
                             continue
-                        merged_id = res_id1 + '__' + res_id2
+                        merged_id = res_id1 + "__" + res_id2
                         if merged_id in results:
-                            raise ValueError(f'Naming collision - {merged_id} exists')
+                            raise ValueError(f"Naming collision - {merged_id} exists")
                         # NOTE: merging will move entity to the end of the list
-                        results[merged_id] = results[res_id1] + '\n' + results[res_id2]
+                        results[merged_id] = results[res_id1] + "\n" + results[res_id2]
                         del results[res_id1]
                         del results[res_id2]
                         # Update resolved IDs to point to the merged result
@@ -63,12 +63,13 @@ def collect_sql(tileset_filename, parallel=False, nodata=False
                             if v == res_id1 or v == res_id2:
                                 resolved[k] = merged_id
     if unresolved:
-        raise ValueError('Circular dependency found in layer requirements: '
-                         + ', '.join(unresolved.keys()))
+        raise ValueError(
+            "Circular dependency found in layer requirements: " + ", ".join(unresolved.keys())
+        )
 
     if not parallel:
-        sql = '\n'.join(results.values())
-        return f'{run_first}\n{sql}\n{run_last}'
+        sql = "\n".join(results.values())
+        return f"{run_first}\n{sql}\n{run_last}"
     else:
         return run_first, results, run_last
 
@@ -83,7 +84,7 @@ def layer_to_sql(layer: Layer, nodata: bool):
         sql += sql_assert_func(func, layer.requires_helpText, layer.id)
 
     for schema in layer.schemas:
-        sql += to_sql(schema, layer, nodata) + '\n\n'
+        sql += to_sql(schema, layer, nodata) + "\n\n"
     sql += f"DO $$ BEGIN RAISE NOTICE 'Finished layer {layer.id}'; END$$;\n"
 
     return sql
@@ -91,9 +92,9 @@ def layer_to_sql(layer: Layer, nodata: bool):
 
 def _sql_hint_clause(hint):
     if hint:
-        return f',\n                    HINT = {quote_literal(hint)}'
+        return f",\n                    HINT = {quote_literal(hint)}"
     else:
-        return ''
+        return ""
 
 
 def sql_assert_table(table, hint, layer_id):
@@ -126,27 +127,31 @@ $$ LANGUAGE 'plpgsql';\n
 
 
 def get_slice_language_tags(tileset):
-    include_tags = list(map(lambda l: 'name:' + l, tileset.languages))
-    include_tags.append('int_name')
-    include_tags.append('loc_name')
-    include_tags.append('name')
-    include_tags.append('wikidata')
-    include_tags.append('wikipedia')
+    include_tags = list(map(lambda l: "name:" + l, tileset.languages))
+    include_tags.append("int_name")
+    include_tags.append("loc_name")
+    include_tags.append("name")
+    include_tags.append("wikidata")
+    include_tags.append("wikipedia")
 
-    r = re.compile(r'(?:^|[_:])name(?:[_:]|$)')
+    r = re.compile(r"(?:^|[_:])name(?:[_:]|$)")
     for layer in tileset.layers:
         for mapping in layer.imposm_mappings:
-            for tags_key, tags_val in mapping.get('tags', {}).items():
-                if tags_key == 'include':
+            for tags_key, tags_val in mapping.get("tags", {}).items():
+                if tags_key == "include":
                     if not isinstance(tags_val, list) or any(
-                            (v for v in tags_val if not v or not isinstance(v, str))
+                        (v for v in tags_val if not v or not isinstance(v, str))
                     ):
-                        raise ValueError(f"Tileset {tileset.name} mapping's "
-                                         f'tags/include must be a list of strings')
+                        raise ValueError(
+                            f"Tileset {tileset.name} mapping's "
+                            f"tags/include must be a list of strings"
+                        )
                     include_tags += (v for v in tags_val if r.search(v) and v not in include_tags)
                 else:
-                    raise ValueError(f'Tileset {tileset.name} mapping tags '
-                                     f"uses an unsupported key '{tags_key}'")
+                    raise ValueError(
+                        f"Tileset {tileset.name} mapping tags "
+                        f"uses an unsupported key '{tags_key}'"
+                    )
 
     tags_sql = "'" + "', '".join(include_tags) + "'"
 
@@ -162,10 +167,11 @@ class FieldExpander:
     def __init__(self, field: str, layer: Layer, indent: str):
         field = [v for v in layer.fields if v.name == field]
         if len(field) != 1:
-            raise ValueError(f'Field {field} was not found in layer {layer.id}')
+            raise ValueError(f"Field {field} was not found in layer {layer.id}")
         if not field[0].values:
-            raise ValueError(f"Field '{field[0].name}' in layer {layer.id} "
-                             f'has no defined values')
+            raise ValueError(
+                f"Field '{field[0].name}' in layer {layer.id} " f"has no defined values"
+            )
         self.field = field[0]
         self.layer = layer
         self.indent = indent
@@ -185,60 +191,68 @@ class FieldExpander:
             else:
                 ignored.append(map_to)
         if ignored and not stderr.isatty():
-            print(f"-- Assuming manual SQL handling of field '{self.field.name}' "
-                  f"values [{','.join(ignored)}] in layer {self.layer.id}",
-                  file=stderr)
-        return self.indent + f'\n{self.indent}'.join(conditions)
+            print(
+                f"-- Assuming manual SQL handling of field '{self.field.name}' "
+                f"values [{','.join(ignored)}] in layer {self.layer.id}",
+                file=stderr,
+            )
+        return self.indent + f"\n{self.indent}".join(conditions)
 
-    def to_expression(self, map_to, mapping: Union[dict, list], op='OR', top=True):
+    def to_expression(self, map_to, mapping: Union[dict, list], op="OR", top=True):
         if isinstance(mapping, list):
             expressions = [self.to_expression(map_to, v, top=False) for v in mapping]
         elif not isinstance(mapping, dict):
-            raise ValueError(f'Definition for {self.field.name}/values/{map_to} '
-                             f'in layer {self.layer.id} must be a list or a dictionary')
-        elif list(mapping.keys()) == ['__AND__']:
-            return self.to_expression(map_to, mapping['__AND__'], 'AND', top)
-        elif list(mapping.keys()) == ['__OR__']:
-            return self.to_expression(map_to, mapping['__OR__'], 'OR', top)
+            raise ValueError(
+                f"Definition for {self.field.name}/values/{map_to} "
+                f"in layer {self.layer.id} must be a list or a dictionary"
+            )
+        elif list(mapping.keys()) == ["__AND__"]:
+            return self.to_expression(map_to, mapping["__AND__"], "AND", top)
+        elif list(mapping.keys()) == ["__OR__"]:
+            return self.to_expression(map_to, mapping["__OR__"], "OR", top)
         else:
-            if '__AND__' in mapping or '__OR__' in mapping:
+            if "__AND__" in mapping or "__OR__" in mapping:
                 raise ValueError(
-                    f'Definition for {self.field.name}/values/{map_to} in layer '
-                    f'{self.layer.id} mixes __AND__ or __OR__ with values')
+                    f"Definition for {self.field.name}/values/{map_to} in layer "
+                    f"{self.layer.id} mixes __AND__ or __OR__ with values"
+                )
             expressions = []
             for in_fld, in_vals in mapping.items():
                 in_fld = self.sql_field(in_fld)
                 if isinstance(in_vals, str):
                     in_vals = [in_vals]
-                wildcards = [self.sql_value(v) for v in in_vals if '%' in v]
-                in_vals = [self.sql_value(v) for v in in_vals if '%' not in v]
-                conditions = [f'{in_fld} LIKE {w}' for w in wildcards]
+                wildcards = [self.sql_value(v) for v in in_vals if "%" in v]
+                in_vals = [self.sql_value(v) for v in in_vals if "%" not in v]
+                conditions = [f"{in_fld} LIKE {w}" for w in wildcards]
                 if in_vals:
                     if len(in_vals) == 1:
-                        conditions.insert(0, f'{in_fld} = {in_vals[0]}')
+                        conditions.insert(0, f"{in_fld} = {in_vals[0]}")
                     else:
                         conditions.insert(0, f"{in_fld} IN ({', '.join(in_vals)})")
-                if op == 'OR':
+                if op == "OR":
                     expressions.extend(conditions)
                 else:
-                    expr = ' OR '.join(conditions)
-                    expressions.append(f'({expr})' if len(conditions) > 1 else expr)
+                    expr = " OR ".join(conditions)
+                    expressions.append(f"({expr})" if len(conditions) > 1 else expr)
         if top:
             if not expressions:
                 return False
-            expr = f'\n{self.indent}    {op} '.join(expressions) + \
-                   (' ' if len(expressions) == 1 else f'\n{self.indent}    ')
-            return f'WHEN {expr}THEN {self.sql_value(map_to)}'
+            expr = f"\n{self.indent}    {op} ".join(expressions) + (
+                " " if len(expressions) == 1 else f"\n{self.indent}    "
+            )
+            return f"WHEN {expr}THEN {self.sql_value(map_to)}"
         elif not expressions:
-            raise ValueError(f'Invalid subexpression {self.field.name}/values/{map_to} '
-                             f'in layer {self.layer.id} - empty sub-conditions')
+            raise ValueError(
+                f"Invalid subexpression {self.field.name}/values/{map_to} "
+                f"in layer {self.layer.id} - empty sub-conditions"
+            )
         else:
-            expr = f' {op} '.join(expressions)
-            return f'({expr})' if len(expressions) > 1 else expr
+            expr = f" {op} ".join(expressions)
+            return f"({expr})" if len(expressions) > 1 else expr
 
     @staticmethod
     def sql_field(field):
-        if not re.match(r'^[a-zA-Z][_a-zA-Z0-9]*$', field):
+        if not re.match(r"^[a-zA-Z][_a-zA-Z0-9]*$", field):
             raise ValueError(f'Unexpected symbols in the field "{field}"')
         return f'"{field}"'
 
@@ -246,7 +260,7 @@ class FieldExpander:
     def sql_value(value):
         if "'" not in value:
             return f"'{value}'"
-        return "E'" + value.replace('\\', '\\\\').replace("'", "\\'") + "'"
+        return "E'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 def to_sql(sql: str, layer: Layer, nodata: bool):
@@ -260,21 +274,20 @@ def to_sql(sql: str, layer: Layer, nodata: bool):
         indent = match.group(1)
         cmd = match.group(2)
         param = match.group(3)
-        if cmd == 'FIELD_MAPPING':
+        if cmd == "FIELD_MAPPING":
             return FieldExpander(param, layer, indent).parse()
-        elif cmd == 'VAR':
+        elif cmd == "VAR":
             result = layer.get_var(param)
             if result is None:
-                raise ValueError(f'Variable {param} does not exist in layer {layer.id}')
+                raise ValueError(f"Variable {param} does not exist in layer {layer.id}")
             return indent + result
         else:
-            raise ValueError(f'Unrecognized substitution {cmd}')
+            raise ValueError(f"Unrecognized substitution {cmd}")
 
-    sql = re.sub(r'( *)%%\s*(\w+)\s*:\s*(\w+)\s*%%', substitute, sql)
+    sql = re.sub(r"( *)%%\s*(\w+)\s*:\s*(\w+)\s*%%", substitute, sql)
 
     # inject 'WITH NO DATA' for the materialized views
     if nodata:
-        sql = re.sub(
-            r'/\*\s*DELAY_MATERIALIZED_VIEW_CREATION\s*\*/', ' WITH NO DATA ', sql)
+        sql = re.sub(r"/\*\s*DELAY_MATERIALIZED_VIEW_CREATION\s*\*/", " WITH NO DATA ", sql)
 
     return sql
